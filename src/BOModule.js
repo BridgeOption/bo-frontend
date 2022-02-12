@@ -6,7 +6,7 @@ function App() {
   const ref = React.useRef()
 
   const [series, setSeries] = React.useState(null)
-  const [priceLines, setPriceLines] = React.useState([])
+  const [betOrders, setBetOrders] = React.useState([])
   const [data, setData] = React.useState([])
   const [priceBet, setPriceBet] = React.useState(1)
   const [totalMoney, setTotalMoney] = React.useState(10000)
@@ -95,43 +95,61 @@ function App() {
         series.update(barUpdated)
         setData(updateLastItemArray(data, barUpdated))
 
-        const newPriceLines = []
-        priceLines.forEach(item => {
-          // lay lai cai thuoc tinh da set ban dau
-          let optionPriceLine = item.priceLine.Ia.ki
-          const timeRemaining = timeRemain(item.betTime)
+        const betOrdersUpdated = []
+        const betOrdersEnded = []
+        betOrders.forEach(item => {
+          if (item.rangeTime === 0) {
+            betOrdersEnded.push(item)
+            return
+          }
+          const rangeTime = item.rangeTime - 2
           if (item.state === 'up') {
-            optionPriceLine = {
-              ...optionPriceLine,
-              // color: optionPriceLine.price > barUpdated.close ? "#f45353" : "#53f463",
+            const u = {
+              ...item,
+              rangeTime,
+              marker: {
+                ...item.marker,
+                color: item.price > barUpdated.close ? '#f45353' : '#53f463',
+                text: `@${item.state} ${item.price} | Time: ${rangeTime}`,
+              },
             }
-
-            series.removePriceLine(item.priceLine)
-            const newLine = series.createPriceLine(optionPriceLine)
-            newPriceLines.push({ ...item, priceLine: newLine })
+            betOrdersUpdated.push(u)
             return
           }
           if (item.state === 'down') {
-            optionPriceLine = {
-              ...optionPriceLine,
-              color:
-                optionPriceLine.price < barUpdated.close
-                  ? '#f45353'
-                  : '#53f463',
+            const u = {
+              ...item,
+              rangeTime,
+              marker: {
+                ...item.marker,
+                color: item.price < barUpdated.close ? '#f45353' : '#53f463',
+                text: `@${item.state} ${item.price} | Time: ${rangeTime}`,
+              },
             }
-
-            series.removePriceLine(item.priceLine)
-            const newLine = series.createPriceLine(optionPriceLine)
-            newPriceLines.push({ ...item, priceLine: newLine })
+            betOrdersUpdated.push(u)
             return
           }
         })
+        series.setMarkers(betOrders.map(item => item.marker))
+        setBetOrders(betOrdersUpdated)
 
-        setPriceLines(newPriceLines)
-        // series.setMarkers(newMarkers.map((item) => item.marker));
+        betOrdersEnded.forEach(item => {
+          series.removePriceLine(item.priceLine)
+        })
       }
     }
-  }, [series, data, priceLines])
+  }, [series, data, betOrders])
+
+  // React.useEffect(() => {
+
+  //         const betOrdersUpdated = [];
+  //         betOrders.forEach((item) => {
+
+  //         });
+  //         series.setMarkers(betOrders.map((item) => item.marker));
+  //         setBetOrders(betOrdersUpdated);
+
+  // }, [betOrders, series]);
 
   // sửa phần tử cuối cùng
   const updateLastItemArray = (array, newItem) => {
@@ -142,42 +160,68 @@ function App() {
 
   const betAdd = () => {
     const lastData = data[data.length - 1]
-    const optionPriceLine = {
-      price: lastData.close,
-      color: 'transparent',
-      lineWidth: 2,
-      lineStyle: LightweightCharts.LineStyle.SparseDotted,
-      axisLabelVisible: true,
-      title: '@Up      ',
+    const marker = {
+      time: lastData.time,
+      position: 'aboveBar',
+      color: '#d1d4dc',
+      shape: 'arrowDown',
+      text: `@up ${lastData.close} | Time: 300`,
     }
 
+    const optionPriceLine = {
+      price: lastData.close,
+      color: '#d1d4dc',
+      lineWidth: 1,
+      lineStyle: LightweightCharts.LineStyle.Dashed,
+      axisLabelVisible: true,
+      title: '@Up',
+    }
     const line = series.createPriceLine(optionPriceLine)
-    setPriceLines([...priceLines, { state: 'up', priceLine: line }])
+    const newBetOrders = [
+      ...betOrders,
+      {
+        rangeTime: 300,
+        price: lastData.close,
+        state: 'up',
+        priceLine: line,
+        marker,
+      },
+    ]
+    setBetOrders(newBetOrders)
+    series.setMarkers(newBetOrders.map(item => item.marker))
   }
 
   const betDown = () => {
     const lastData = data[data.length - 1]
+    const marker = {
+      time: lastData.time,
+      position: 'belowBar',
+      color: '#d1d4dc',
+      shape: 'arrowUp',
+      text: `@down ${lastData.close} | Time: 300`,
+    }
+
     const optionPriceLine = {
       price: lastData.close,
       color: '#d1d4dc',
-      lineWidth: 2,
-      lineStyle: LightweightCharts.LineStyle.SparseDotted,
+      lineWidth: 1,
+      lineStyle: LightweightCharts.LineStyle.Dashed,
       axisLabelVisible: true,
       title: '@Down',
     }
-
     const line = series.createPriceLine(optionPriceLine)
-    setPriceLines([
-      ...priceLines,
-      { state: 'down', betTime: new Date().getTime(), priceLine: line },
-    ])
-  }
-
-  const timeRemain = (betTime, rangeTime = 5) => {
-    const r = betTime + rangeTime * 60 * 1000
-    const now = new Date().getTime()
-
-    return r - now
+    const newBetOrders = [
+      ...betOrders,
+      {
+        rangeTime: 300,
+        price: lastData.close,
+        state: 'down',
+        priceLine: line,
+        marker,
+      },
+    ]
+    setBetOrders(newBetOrders)
+    series.setMarkers(newBetOrders.map(item => item.marker))
   }
 
   return (
@@ -193,17 +237,6 @@ function App() {
       />
       <button onClick={() => betAdd()}>Tăng</button>
       <button onClick={() => betDown()}>Giảm</button>
-      <div
-        style={{
-          position: 'absolute',
-          color: 'white',
-          top: 12,
-          right: 100,
-          zIndex: 1,
-        }}
-      >
-        Time Down:{' '}
-      </div>
     </div>
   )
 }

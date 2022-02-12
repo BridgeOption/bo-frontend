@@ -1,18 +1,33 @@
 import React from 'react'
-import { createChart } from 'lightweight-charts'
+import * as LightweightCharts from 'lightweight-charts'
 
 const t = new WebSocket('wss://stream.binance.com:9443/ws/btcusdt@kline_1m')
-function BoModule() {
+function App() {
   const ref = React.useRef()
 
   const [series, setSeries] = React.useState(null)
-  const [markers, setMarkers] = React.useState([])
+  const [priceLines, setPriceLines] = React.useState([])
   const [data, setData] = React.useState([])
-  // const markers = [{ time: data[data.length - 48].time, position: "aboveBar", color: "#f68410", shape: "circle", text: "D" }];
+  const [priceBet, setPriceBet] = React.useState(1)
+  const [totalMoney, setTotalMoney] = React.useState(10000)
+  const [nextMinute, setNextMinute] = React.useState()
+
   React.useEffect(() => {
-    const chart = createChart(ref.current, {
+    const chart = LightweightCharts.createChart(ref.current, {
       width: 1000,
       height: 500,
+      layout: {
+        textColor: '#d1d4dc',
+        backgroundColor: '#000000',
+      },
+      grid: {
+        vertLines: {
+          color: 'rgba(42, 46, 57, 0)',
+        },
+        horzLines: {
+          color: 'rgba(42, 46, 57, 0)',
+        },
+      },
       localization: {
         timeFormatter: time => {
           const date = new Date(time)
@@ -36,11 +51,8 @@ function BoModule() {
     })
     const seriesInit = chart.addCandlestickSeries()
     seriesInit.setData(data)
-    seriesInit.setMarkers(markers)
-
+    // seriesInit.setMarkers(markers);
     setSeries(seriesInit)
-
-    // initial
   }, [])
 
   React.useEffect(() => {
@@ -83,37 +95,43 @@ function BoModule() {
         series.update(barUpdated)
         setData(updateLastItemArray(data, barUpdated))
 
-        const newMarkers = []
-        markers.forEach(item => {
+        const newPriceLines = []
+        priceLines.forEach(item => {
+          // lay lai cai thuoc tinh da set ban dau
+          let optionPriceLine = item.priceLine.Ia.ki
+          const timeRemaining = timeRemain(item.betTime)
           if (item.state === 'up') {
-            newMarkers.push({
-              ...item,
-              marker: {
-                ...item.marker,
-                color: item.price > barUpdated.close ? '#f45353' : '#53f463',
-              },
-            })
-            return
-          }
+            optionPriceLine = {
+              ...optionPriceLine,
+              // color: optionPriceLine.price > barUpdated.close ? "#f45353" : "#53f463",
+            }
 
-          if (item.state === 'down') {
-            newMarkers.push({
-              ...item,
-              marker: {
-                ...item.marker,
-                color: item.price < barUpdated.close ? '#f45353' : '#53f463',
-              },
-            })
+            series.removePriceLine(item.priceLine)
+            const newLine = series.createPriceLine(optionPriceLine)
+            newPriceLines.push({ ...item, priceLine: newLine })
             return
           }
-          newMarkers.push(item)
+          if (item.state === 'down') {
+            optionPriceLine = {
+              ...optionPriceLine,
+              color:
+                optionPriceLine.price < barUpdated.close
+                  ? '#f45353'
+                  : '#53f463',
+            }
+
+            series.removePriceLine(item.priceLine)
+            const newLine = series.createPriceLine(optionPriceLine)
+            newPriceLines.push({ ...item, priceLine: newLine })
+            return
+          }
         })
 
-        setMarkers(newMarkers)
-        series.setMarkers(newMarkers.map(item => item.marker))
+        setPriceLines(newPriceLines)
+        // series.setMarkers(newMarkers.map((item) => item.marker));
       }
     }
-  }, [series, data.length, markers])
+  }, [series, data, priceLines])
 
   // sửa phần tử cuối cùng
   const updateLastItemArray = (array, newItem) => {
@@ -124,47 +142,70 @@ function BoModule() {
 
   const betAdd = () => {
     const lastData = data[data.length - 1]
-    const marker = {
-      time: lastData.time,
-      position: 'aboveBar',
-      color: '#635e5e',
-      shape: 'arrowDown',
-      text: '@Up ' + lastData.close,
+    const optionPriceLine = {
+      price: lastData.close,
+      color: 'transparent',
+      lineWidth: 2,
+      lineStyle: LightweightCharts.LineStyle.SparseDotted,
+      axisLabelVisible: true,
+      title: '@Up      ',
     }
-    // lưu trạng thái marker
-    const newMarkers = [
-      ...markers,
-      { state: 'up', price: lastData.close, marker },
-    ]
-    series.setMarkers(newMarkers.map(item => item.marker))
-    setMarkers(newMarkers)
+
+    const line = series.createPriceLine(optionPriceLine)
+    setPriceLines([...priceLines, { state: 'up', priceLine: line }])
   }
 
   const betDown = () => {
     const lastData = data[data.length - 1]
-    const marker = {
-      time: lastData.time,
-      position: 'belowBar',
-      color: '#635e5e',
-      shape: 'arrowUp',
-      text: '@Down ' + lastData.close,
+    const optionPriceLine = {
+      price: lastData.close,
+      color: '#d1d4dc',
+      lineWidth: 2,
+      lineStyle: LightweightCharts.LineStyle.SparseDotted,
+      axisLabelVisible: true,
+      title: '@Down',
     }
-    // lưu trạng thái marker
-    const newMarkers = [
-      ...markers,
-      { state: 'down', price: lastData.close, marker },
-    ]
-    series.setMarkers(newMarkers.map(item => item.marker))
-    setMarkers(newMarkers)
+
+    const line = series.createPriceLine(optionPriceLine)
+    setPriceLines([
+      ...priceLines,
+      { state: 'down', betTime: new Date().getTime(), priceLine: line },
+    ])
+  }
+
+  const timeRemain = (betTime, rangeTime = 5) => {
+    const r = betTime + rangeTime * 60 * 1000
+    const now = new Date().getTime()
+
+    return r - now
   }
 
   return (
     <div>
-      <div ref={ref}></div>
+      <div ref={ref} style={{ position: 'relative' }}></div>
+      <div>{totalMoney}</div>
+      <input
+        type="text"
+        value={priceBet}
+        onChange={e => {
+          setPriceBet(Number(e.currentTarget.value))
+        }}
+      />
       <button onClick={() => betAdd()}>Tăng</button>
       <button onClick={() => betDown()}>Giảm</button>
+      <div
+        style={{
+          position: 'absolute',
+          color: 'white',
+          top: 12,
+          right: 100,
+          zIndex: 1,
+        }}
+      >
+        Time Down:{' '}
+      </div>
     </div>
   )
 }
 
-export default BoModule
+export default App

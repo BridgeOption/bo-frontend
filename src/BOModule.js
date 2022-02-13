@@ -1,18 +1,43 @@
 import React from 'react'
 import * as LightweightCharts from 'lightweight-charts'
+import { Grid, Form, Input } from 'semantic-ui-react'
+import { useSubstrate } from './substrate-lib'
+import { TxButton } from './substrate-lib/components'
+import Events from './Events'
 
 const t = new WebSocket('wss://stream.binance.com:9443/ws/btcusdt@kline_1m')
-function App() {
+function Main(props) {
   const ref = React.useRef()
+  const { api } = useSubstrate()
+  const { accountPair } = props
+  const [currentValue, setCurrentValue] = React.useState(0)
+  const [formValue, setFormValue] = React.useState(0)
+  // The transaction submission status
+  const [status, setStatus] = React.useState('')
 
   const [series, setSeries] = React.useState(null)
   const [betOrders, setBetOrders] = React.useState([])
   const [data, setData] = React.useState([])
   const [priceBet, setPriceBet] = React.useState(1)
-  const [totalMoney, setTotalMoney] = React.useState(10000)
-  const [nextMinute, setNextMinute] = React.useState()
 
+  const fetchHistoryData = async () => {
+    const promise = await fetch(
+      'https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=1m'
+    )
+    const result = await promise.json()
+
+    return result.map(item => ({
+      time: item[0],
+      open: item[1],
+      high: item[2],
+      low: item[3],
+      close: item[4],
+      // value: item[5], // volume
+      // color: item[4] < item[1] ? '#EF5350' : '#26a69a',
+    }))
+  }
   React.useEffect(() => {
+    fetchHistoryData()
     const chart = LightweightCharts.createChart(ref.current, {
       width: 1000,
       height: 500,
@@ -49,10 +74,15 @@ function App() {
         timeVisible: true,
       },
     })
-    const seriesInit = chart.addCandlestickSeries()
-    seriesInit.setData(data)
-    // seriesInit.setMarkers(markers);
-    setSeries(seriesInit)
+    const candleSeriesInit = chart.addCandlestickSeries()
+
+    fetchHistoryData().then(d => {
+      candleSeriesInit.setData(d)
+
+      setData(d)
+    })
+
+    setSeries(candleSeriesInit)
   }, [])
 
   React.useEffect(() => {
@@ -64,6 +94,8 @@ function App() {
         high: event.k.h,
         low: event.k.l,
         close: event.k.c,
+        // value: event.k.v,
+        // color: event.k.c < event.k.o ? '#EF5350' : '#26a69a',
       }
       const currentBarMinute = new Date(event.E).getMinutes()
       const currentTimeMinute = new Date().getMinutes()
@@ -140,16 +172,26 @@ function App() {
     }
   }, [series, data, betOrders])
 
-  // React.useEffect(() => {
+  React.useEffect(() => {
+    let unsubscribe
+    api.query.templateModule
+      .something(newValue => {
+        // The storage value is an Option<u32>
+        // So we have to check whether it is None first
+        // There is also unwrapOr
+        if (newValue.isNone) {
+          setCurrentValue('<None>')
+        } else {
+          setCurrentValue(newValue.unwrap().toNumber())
+        }
+      })
+      .then(unsub => {
+        unsubscribe = unsub
+      })
+      .catch(console.error)
 
-  //         const betOrdersUpdated = [];
-  //         betOrders.forEach((item) => {
-
-  //         });
-  //         series.setMarkers(betOrders.map((item) => item.marker));
-  //         setBetOrders(betOrdersUpdated);
-
-  // }, [betOrders, series]);
+    return () => unsubscribe && unsubscribe()
+  }, [api.query.templateModule])
 
   // sửa phần tử cuối cùng
   const updateLastItemArray = (array, newItem) => {
@@ -225,9 +267,50 @@ function App() {
   }
 
   return (
-    <div>
-      <div ref={ref} style={{ position: 'relative' }}></div>
-      <div>{totalMoney}</div>
+    <>
+      <Grid.Row>
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'center',
+            width: '100%',
+          }}
+        >
+          <div ref={ref} style={{ position: 'relative' }}></div>
+        </div>
+      </Grid.Row>
+      <Grid.Row>
+        <Grid.Column width={8}>
+          <h1 style={{ float: 'left' }}>Trade</h1>
+          <Form>
+            <Form.Field>
+              <Input
+                label="New Value"
+                state="newValue"
+                type="number"
+                onChange={(_, { value }) => setFormValue(value)}
+              />
+            </Form.Field>
+            <Form.Field style={{ textAlign: 'center' }}>
+              <TxButton
+                accountPair={accountPair}
+                label="Store Something"
+                type="SIGNED-TX"
+                setStatus={setStatus}
+                attrs={{
+                  palletRpc: 'templateModule',
+                  callable: 'doSomething',
+                  inputParams: [formValue],
+                  paramFields: [true],
+                }}
+              />
+            </Form.Field>
+            <div style={{ overflowWrap: 'break-word' }}>{status}</div>
+          </Form>
+        </Grid.Column>
+        <Events />
+      </Grid.Row>
+      {/* <div>{totalMoney}</div>
       <input
         type="text"
         value={priceBet}
@@ -236,9 +319,14 @@ function App() {
         }}
       />
       <button onClick={() => betAdd()}>Tăng</button>
-      <button onClick={() => betDown()}>Giảm</button>
-    </div>
+      <button onClick={() => betDown()}>Giảm</button> */}
+    </>
   )
 }
 
-export default App
+export default function BOModule(props) {
+  const { api } = useSubstrate()
+  return api.query.templateModule && api.query.templateModule.something ? (
+    <Main {...props} />
+  ) : null
+}

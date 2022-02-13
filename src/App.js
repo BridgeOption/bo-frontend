@@ -65,12 +65,12 @@ function Main() {
 
   return (
     <div ref={contextRef}>
-      {/* <Sticky context={contextRef}>
+      <Sticky context={contextRef}>
         <AccountSelector setAccountAddress={setAccountAddress} />
       </Sticky>
       <Container>
         <Grid stackable columns="equal">
-          <Grid.Row stretched>
+          {/* <Grid.Row stretched>
             <NodeInfo />
             <Metadata />
             <BlockNumber />
@@ -82,18 +82,16 @@ function Main() {
           <Grid.Row>
             <Transfer accountPair={accountPair} />
             <Upgrade accountPair={accountPair} />
-          </Grid.Row>
-          <Grid.Row>
+          </Grid.Row> */}
+
+          <BoModule />
+          {/* <Grid.Row>
             <Interactor accountPair={accountPair} />
             <Events />
-          </Grid.Row>
-          <Grid.Row>
-            <TemplateModule accountPair={accountPair} />
-          </Grid.Row>
+          </Grid.Row> */}
         </Grid>
       </Container>
-      <DeveloperConsole /> */}
-      <BoModule />
+      <DeveloperConsole />
     </div>
   )
 }

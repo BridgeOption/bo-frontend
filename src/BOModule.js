@@ -1,24 +1,30 @@
 import React from 'react'
 import * as LightweightCharts from 'lightweight-charts'
-import { Grid, Form, Input } from 'semantic-ui-react'
+import { Grid, Form, Input, Dropdown, Feed } from 'semantic-ui-react'
 import { useSubstrate } from './substrate-lib'
 import { TxButton } from './substrate-lib/components'
 import Events from './Events'
+import PropTypes from 'prop-types'
+
+import { toast } from 'react-toastify'
 
 const t = new WebSocket('wss://stream.binance.com:9443/ws/btcusdt@kline_1m')
 function Main(props) {
   const ref = React.useRef()
   const { api } = useSubstrate()
   const { accountPair } = props
-  const [currentValue, setCurrentValue] = React.useState(0)
-  const [formValue, setFormValue] = React.useState(0)
   // The transaction submission status
   const [status, setStatus] = React.useState('')
 
   const [series, setSeries] = React.useState(null)
   const [betOrders, setBetOrders] = React.useState([])
   const [data, setData] = React.useState([])
-  const [priceBet, setPriceBet] = React.useState(1)
+  const [currentPrice, setCurrentPrice] = React.useState(100)
+  const [optionsExpireAt, setOptionsExpireAt] = React.useState([])
+  const [currentExpireAt, setCurrentExpireAt] = React.useState(
+    optionsExpireAt[0]?.value
+  )
+  const [history, setHistory] = React.useState([])
 
   const fetchHistoryData = async () => {
     const promise = await fetch(
@@ -37,22 +43,39 @@ function Main(props) {
     }))
   }
   React.useEffect(() => {
+    // set expire time
+    const options = [
+      {
+        // 1 minute
+        key: 60,
+        text: `1 minute`,
+        value: 60,
+        image: null,
+      },
+      {
+        // 3 minute
+        key: 3 * 60,
+        text: `3 minutes`,
+        value: 3 * 60,
+        image: null,
+      },
+
+      {
+        // 5 minute
+        key: 5 * 60,
+        text: `5 minutes`,
+        value: 5 * 60,
+        image: null,
+      },
+    ]
+
+    setOptionsExpireAt(options)
+    setCurrentExpireAt(options[0].value)
+
     fetchHistoryData()
     const chart = LightweightCharts.createChart(ref.current, {
-      width: 1000,
-      height: 500,
-      layout: {
-        textColor: '#d1d4dc',
-        backgroundColor: '#000000',
-      },
-      grid: {
-        vertLines: {
-          color: 'rgba(42, 46, 57, 0)',
-        },
-        horzLines: {
-          color: 'rgba(42, 46, 57, 0)',
-        },
-      },
+      width: ref.current.offsetWidth,
+      height: 600,
       localization: {
         timeFormatter: time => {
           const date = new Date(time)
@@ -78,11 +101,11 @@ function Main(props) {
 
     fetchHistoryData().then(d => {
       candleSeriesInit.setData(d)
-
       setData(d)
     })
 
     setSeries(candleSeriesInit)
+    return () => t.close()
   }, [])
 
   React.useEffect(() => {
@@ -172,27 +195,37 @@ function Main(props) {
     }
   }, [series, data, betOrders])
 
+  // query history
   React.useEffect(() => {
-    let unsubscribe
-    api.query.templateModule
-      .something(newValue => {
-        // The storage value is an Option<u32>
-        // So we have to check whether it is None first
-        // There is also unwrapOr
-        if (newValue.isNone) {
-          setCurrentValue('<None>')
-        } else {
-          setCurrentValue(newValue.unwrap().toNumber())
-        }
-      })
-      .then(unsub => {
-        unsubscribe = unsub
-      })
-      .catch(console.error)
+    let unsub = null
 
-    return () => unsubscribe && unsubscribe()
-  }, [api.query.templateModule])
+    const allEvents = async () => {
+      if (accountPair?.address) {
+        const userOrders = await api.query.boTradingModule.userOrders(
+          accountPair?.address
+        )
+        const orders = await api.query.boTradingModule.orders.multi(
+          userOrders.toHuman()
+        )
+        const newHistory = []
+        orders.forEach((order, index) => {
+          const { tradeType, volumeInUnit, openPrice, payoutRate } =
+            order.toHuman()
+          const h = {
+            key: index,
+            summary: `${tradeType} - amount: ${volumeInUnit}`,
+            content: `open price: ${openPrice} - pay out rate: ${payoutRate}%`,
+          }
+          newHistory.push(h)
+        })
 
+        setHistory(newHistory.reverse())
+      }
+    }
+
+    allEvents()
+    return () => unsub && unsub()
+  }, [api.query.boTradingModule, history, accountPair])
   // sửa phần tử cuối cùng
   const updateLastItemArray = (array, newItem) => {
     array.pop()
@@ -207,7 +240,7 @@ function Main(props) {
       position: 'aboveBar',
       color: '#d1d4dc',
       shape: 'arrowDown',
-      text: `@up ${lastData.close} | Time: 300`,
+      text: `@up ${lastData.close} | Time: ${currentExpireAt}`,
     }
 
     const optionPriceLine = {
@@ -222,7 +255,7 @@ function Main(props) {
     const newBetOrders = [
       ...betOrders,
       {
-        rangeTime: 300,
+        rangeTime: currentExpireAt,
         price: lastData.close,
         state: 'up',
         priceLine: line,
@@ -240,7 +273,7 @@ function Main(props) {
       position: 'belowBar',
       color: '#d1d4dc',
       shape: 'arrowUp',
-      text: `@down ${lastData.close} | Time: 300`,
+      text: `@down ${lastData.close} | Time: ${currentExpireAt}`,
     }
 
     const optionPriceLine = {
@@ -255,7 +288,7 @@ function Main(props) {
     const newBetOrders = [
       ...betOrders,
       {
-        rangeTime: 300,
+        rangeTime: currentExpireAt,
         price: lastData.close,
         state: 'down',
         priceLine: line,
@@ -266,67 +299,117 @@ function Main(props) {
     series.setMarkers(newBetOrders.map(item => item.marker))
   }
 
+  const getNextTime = seconds => {
+    const now = Date.now()
+    const unitCurrentTime = Math.floor(now / 1000)
+    return unitCurrentTime + seconds
+  }
+
   return (
     <>
       <Grid.Row>
-        <div
-          style={{
-            display: 'flex',
-            justifyContent: 'center',
-            width: '100%',
-          }}
-        >
+        <Grid.Column width={13}>
           <div ref={ref} style={{ position: 'relative' }}></div>
-        </div>
-      </Grid.Row>
-      <Grid.Row>
-        <Grid.Column width={8}>
+        </Grid.Column>
+        <Grid.Column width={3}>
           <h1 style={{ float: 'left' }}>Trade</h1>
           <Form>
             <Form.Field>
+              <label>Amount</label>
               <Input
-                label="New Value"
-                state="newValue"
+                state="currentPrice"
                 type="number"
-                onChange={(_, { value }) => setFormValue(value)}
+                value={currentPrice}
+                onChange={(_, { value }) => setCurrentPrice(value)}
+              />
+            </Form.Field>
+            <Form.Field>
+              <label>Expire At</label>
+              <Dropdown
+                selection
+                options={optionsExpireAt}
+                defaultValue={currentExpireAt}
+                value={currentExpireAt}
+                onChange={(_, { value }) => setCurrentExpireAt(value)}
               />
             </Form.Field>
             <Form.Field style={{ textAlign: 'center' }}>
-              <TxButton
-                accountPair={accountPair}
-                label="Store Something"
-                type="SIGNED-TX"
-                setStatus={setStatus}
-                attrs={{
-                  palletRpc: 'templateModule',
-                  callable: 'doSomething',
-                  inputParams: [formValue],
-                  paramFields: [true],
-                }}
-              />
+              <span onClick={() => betAdd()}>
+                <TxButton
+                  accountPair={accountPair}
+                  attrsButton={{ fluid: true }}
+                  color="green"
+                  label="Call 95%"
+                  type="SIGNED-TX"
+                  setStatus={setStatus}
+                  attrs={{
+                    palletRpc: 'boTradingModule',
+                    callable: 'placeOrder',
+                    inputParams: [
+                      'BtcUsdt',
+                      'Call',
+                      currentPrice,
+                      getNextTime(currentExpireAt),
+                    ],
+                    paramFields: [
+                      PropTypes.string,
+                      PropTypes.string,
+                      PropTypes.number,
+                      PropTypes.number,
+                    ],
+                  }}
+                />
+              </span>
+            </Form.Field>
+            <Form.Field style={{ textAlign: 'center' }}>
+              <span onClick={() => betDown()}>
+                <TxButton
+                  accountPair={accountPair}
+                  attrsButton={{ fluid: true }}
+                  color="red"
+                  label="Put 95%"
+                  type="SIGNED-TX"
+                  setStatus={setStatus}
+                  attrs={{
+                    palletRpc: 'boTradingModule',
+                    callable: 'placeOrder',
+                    inputParams: [
+                      'BtcUsdt',
+                      'Put',
+                      currentPrice,
+                      getNextTime(currentExpireAt),
+                    ],
+                    paramFields: [
+                      PropTypes.string,
+                      PropTypes.string,
+                      PropTypes.number,
+                      PropTypes.number,
+                    ],
+                  }}
+                />
+              </span>
             </Form.Field>
             <div style={{ overflowWrap: 'break-word' }}>{status}</div>
           </Form>
+          {/* <Events /> */}
+          <Grid.Column width={3}>
+            <h1 style={{ float: 'left' }}>History</h1>
+            <Feed
+              style={{
+                clear: 'both',
+                overflow: 'auto',
+                maxHeight: 240,
+              }}
+              events={history}
+            />
+          </Grid.Column>
         </Grid.Column>
-        <Events />
       </Grid.Row>
-      {/* <div>{totalMoney}</div>
-      <input
-        type="text"
-        value={priceBet}
-        onChange={e => {
-          setPriceBet(Number(e.currentTarget.value))
-        }}
-      />
-      <button onClick={() => betAdd()}>Tăng</button>
-      <button onClick={() => betDown()}>Giảm</button> */}
     </>
   )
 }
 
 export default function BOModule(props) {
   const { api } = useSubstrate()
-  return api.query.templateModule && api.query.templateModule.something ? (
-    <Main {...props} />
-  ) : null
+  return api.query.boTradingModule ? <Main {...props} /> : null
 }

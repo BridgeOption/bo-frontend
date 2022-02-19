@@ -6,11 +6,13 @@ import {
   Grid,
   Sticky,
   Message,
+  Dropdown,
 } from 'semantic-ui-react'
 import 'semantic-ui-css/semantic.min.css'
 
 import { SubstrateContextProvider, useSubstrate } from './substrate-lib'
 import { DeveloperConsole } from './substrate-lib/components'
+import './app.css'
 
 import AccountSelector from './AccountSelector'
 import Balances from './Balances'
@@ -23,10 +25,14 @@ import TemplateModule from './TemplateModule'
 import Transfer from './Transfer'
 import Upgrade from './Upgrade'
 import BoModule from './BOModule'
+import 'react-toastify/dist/ReactToastify.css'
+import { ToastContainer } from 'react-toastify'
+import ProviderLiquidityModule from './ProviderLiquidityModule'
 
 function Main() {
   const [accountAddress, setAccountAddress] = useState(null)
   const { apiState, keyring, keyringState, apiError } = useSubstrate()
+  const [role, setRole] = React.useState(1)
   const accountPair =
     accountAddress &&
     keyringState === 'READY' &&
@@ -51,7 +57,6 @@ function Main() {
       </Grid.Column>
     </Grid>
   )
-
   if (apiState === 'ERROR') return message(apiError)
   else if (apiState !== 'READY') return loader('Connecting to Substrate')
 
@@ -64,12 +69,17 @@ function Main() {
   const contextRef = createRef()
 
   return (
-    <div ref={contextRef}>
+    <div ref={contextRef} className="app">
       <Sticky context={contextRef}>
-        <AccountSelector setAccountAddress={setAccountAddress} />
+        <AccountSelector
+          setAccountAddress={setAccountAddress}
+          setRole={setRole}
+          role={role}
+        />
       </Sticky>
-      <Container>
-        <Grid stackable columns="equal">
+      <>
+        {/* <> remove container */}
+        <Grid stackable columns="equal" padded>
           {/* <Grid.Row stretched>
             <NodeInfo />
             <Metadata />
@@ -83,15 +93,31 @@ function Main() {
             <Transfer accountPair={accountPair} />
             <Upgrade accountPair={accountPair} />
           </Grid.Row> */}
+          {!role ? (
+            <ProviderLiquidityModule accountPair={accountPair} />
+          ) : (
+            <BoModule accountPair={accountPair} />
+          )}
 
-          <BoModule />
           {/* <Grid.Row>
             <Interactor accountPair={accountPair} />
             <Events />
           </Grid.Row> */}
         </Grid>
-      </Container>
+      </>
       <DeveloperConsole />
+      <ToastContainer
+        position="top-center"
+        autoClose={5000}
+        hideProgressBar={true}
+        newestOnTop={false}
+        closeOnClick
+        rtl={false}
+        pauseOnFocusLoss
+        draggable
+        pauseOnHover
+        theme="colored"
+      />
     </div>
   )
 }

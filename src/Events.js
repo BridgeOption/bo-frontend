@@ -32,7 +32,7 @@ function Main(props) {
           const evNamePhase = `${evName}::(phase=${phase.toString()})`
 
           if (FILTERED_EVENTS.includes(evNamePhase)) return
-
+          props.emitEvent(evHuman)
           setEventFeed(e => [
             {
               key: keyNum,
@@ -52,11 +52,11 @@ function Main(props) {
     return () => unsub && unsub()
   }, [api.query.system])
 
-  const { feedMaxHeight = 250 } = props
+  const { feedMaxHeight = 350 } = props
 
   return (
-    <Grid.Column width={8}>
-      <h1 style={{ float: 'left' }}>Events</h1>
+    <>
+      <h1 style={{ float: 'left' }}>Debug</h1>
       <Button
         basic
         circular
@@ -70,7 +70,7 @@ function Main(props) {
         style={{ clear: 'both', overflow: 'auto', maxHeight: feedMaxHeight }}
         events={eventFeed}
       />
-    </Grid.Column>
+    </>
   )
 }
 

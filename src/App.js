@@ -93,11 +93,10 @@ function Main() {
             <Transfer accountPair={accountPair} />
             <Upgrade accountPair={accountPair} />
           </Grid.Row> */}
-          {!role ? (
-            <ProviderLiquidityModule accountPair={accountPair} />
-          ) : (
-            <BoModule accountPair={accountPair} />
-          )}
+
+          <ProviderLiquidityModule accountPair={accountPair} role={role} />
+
+          <BoModule accountPair={accountPair} role={role} />
 
           {/* <Grid.Row>
             <Interactor accountPair={accountPair} />

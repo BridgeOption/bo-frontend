@@ -4,6 +4,8 @@ import PropTypes from 'prop-types'
 
 import { useSubstrate } from './substrate-lib'
 import { TxButton } from './substrate-lib/components'
+import Events from './Events'
+import { toast } from 'react-toastify'
 // Events to be filtered from feed
 
 function Main(props) {
@@ -16,6 +18,7 @@ function Main(props) {
   const [listPool, setListPool] = React.useState([])
   const [currentPool, setCurrentPool] = React.useState('')
   const [status, setStatus] = React.useState('')
+  const [currentEvent, setCurrentEvent] = React.useState(null)
 
   React.useEffect(() => {
     let unsub = null
@@ -42,12 +45,23 @@ function Main(props) {
     allEvents()
     return () => unsub && unsub()
   }, [api.query.boLiquidityModule, listPool])
+  React.useEffect(() => {
+    if (currentEvent && currentEvent.section === 'boLiquidityModule') {
+      if (currentEvent.method === 'LPCreated') {
+        toast.success('Created pool successfully.')
+      }
+
+      if (currentEvent.method === 'LPDeposit') {
+        toast.success('Deposited pool successfully.')
+      }
+    }
+  }, [currentEvent])
 
   const { feedMaxHeight = 250 } = props
 
   return (
     <>
-      <Grid.Row>
+      <Grid.Row style={{ display: !props.role ? '' : 'none' }}>
         <Grid.Column>
           <h1 style={{ float: 'left' }}>List pool</h1>
           <Feed
@@ -59,9 +73,13 @@ function Main(props) {
             events={listPool.map((item, index) => ({
               key: index,
               summary: `Name: ${item.name}`,
-              content: `volume: ${item.amount} - pay out rate: ${item.payoutRate}%`,
+              content: `volume: $${item.amount.replace(
+                ',000,000,000,000',
+                ''
+              )} - pay out rate: ${item.payoutRate}%`,
             }))}
           />
+          <Events emitEvent={event => setCurrentEvent(event)} />
         </Grid.Column>
         <Grid.Column>
           <h1 style={{ float: 'left' }}>Create pool</h1>
@@ -99,15 +117,12 @@ function Main(props) {
                 attrs={{
                   palletRpc: 'boLiquidityModule',
                   callable: 'createLp',
-                  inputParams: [name, payOutRate, amount],
-                  paramFields: [
-                    PropTypes.string,
-                    PropTypes.number,
-                    PropTypes.number,
-                  ],
+                  inputParams: [name, payOutRate, amount + '000000000000'],
+                  paramFields: [true, true, true],
                 }}
               />
             </Form.Field>
+            {status}
           </Form>
         </Grid.Column>
         <Grid.Column>
@@ -148,8 +163,8 @@ function Main(props) {
                 attrs={{
                   palletRpc: 'boLiquidityModule',
                   callable: 'depositLp',
-                  inputParams: [currentPool, amountDeposit],
-                  paramFields: [PropTypes.string, PropTypes.number],
+                  inputParams: [currentPool, amountDeposit + '000000000000'],
+                  paramFields: [true, true],
                 }}
               />
             </Form.Field>

@@ -64,12 +64,9 @@ function TxButton({
   }
 
   const txResHandler = ({ status }) =>
-    status.isFinalized
-      ? setStatus(`😉 Finalized. Block hash: ${status.asFinalized.toString()}`)
-      : setStatus(`Current transaction status: ${status.type}`)
+    status.isFinalized ? setStatus(`Finalized`) : setStatus(`${status.type}`)
 
-  const txErrHandler = err =>
-    setStatus(`😞 Transaction Failed: ${err.toString()}`)
+  const txErrHandler = err => setStatus(`error`) // lỗi
 
   const sudoTx = async () => {
     const fromAcct = await getFromAcct()
@@ -158,7 +155,7 @@ function TxButton({
       setUnsub(null)
     }
 
-    setStatus('Sending...')
+    setStatus('Sending')
     ;(isSudo() && sudoTx()) ||
       (isUncheckedSudo() && uncheckedSudoTx()) ||
       (isSigned() && signedTx()) ||

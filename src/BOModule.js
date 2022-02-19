@@ -25,6 +25,7 @@ function Main(props) {
     optionsExpireAt[0]?.value
   )
   const [history, setHistory] = React.useState([])
+  const [currentEvent, setCurrentEvent] = React.useState(null)
 
   const fetchHistoryData = async () => {
     const promise = await fetch(
@@ -165,7 +166,11 @@ function Main(props) {
               marker: {
                 ...item.marker,
                 color: item.price > barUpdated.close ? '#f45353' : '#53f463',
-                text: `@${item.state} ${item.price} | Time: ${rangeTime}`,
+                text: `@${item.state} ${Number(item.price)} | ${
+                  item.price <= barUpdated.close
+                    ? '+ ' + (0.95 * item.amount).toFixed(2) + '$'
+                    : '- ' + item.amount + '$'
+                } | Time: ${rangeTime}`,
               },
             }
             betOrdersUpdated.push(u)
@@ -178,7 +183,11 @@ function Main(props) {
               marker: {
                 ...item.marker,
                 color: item.price < barUpdated.close ? '#f45353' : '#53f463',
-                text: `@${item.state} ${item.price} | Time: ${rangeTime}`,
+                text: `@${item.state} ${Number(item.price)} | ${
+                  item.price >= barUpdated.close
+                    ? '+ ' + (0.95 * item.amount).toFixed(2) + '$'
+                    : '- ' + item.amount + '$'
+                } | Time: ${rangeTime}`,
               },
             }
             betOrdersUpdated.push(u)
@@ -209,12 +218,24 @@ function Main(props) {
         )
         const newHistory = []
         orders.forEach((order, index) => {
-          const { tradeType, volumeInUnit, openPrice, payoutRate } =
-            order.toHuman()
+          const {
+            tradeType,
+            volumeInUnit,
+            openPrice,
+            payoutRate,
+            status,
+            closePrice,
+          } = order.toHuman()
           const h = {
             key: index,
-            summary: `${tradeType} - amount: ${volumeInUnit}`,
-            content: `open price: ${openPrice} - pay out rate: ${payoutRate}%`,
+            status,
+            summary: `${tradeType} - amount: $${volumeInUnit.replace(
+              ',000,000,000,000',
+              ''
+            )} - Status: ${status === 'Created' ? 'Pending' : status}`,
+            content: `Open price: ${openPrice} cents - Close price: ${
+              !closePrice ? '--' : closePrice
+            } cents - pay out rate: ${payoutRate}%`,
           }
           newHistory.push(h)
         })
@@ -226,6 +247,22 @@ function Main(props) {
     allEvents()
     return () => unsub && unsub()
   }, [api.query.boTradingModule, history, accountPair])
+
+  React.useEffect(() => {
+    if (currentEvent && currentEvent.section === 'boTradingModule') {
+      if (currentEvent.method === 'OrderCreated') {
+        toast.info('Order successfully!')
+      }
+      if (currentEvent.method === 'OrderClosed') {
+        if (currentEvent.data[3] === 'Lose') {
+          toast.error('Lose')
+        }
+        if (currentEvent.data[3] === 'Win') {
+          toast.success('Win')
+        }
+      }
+    }
+  }, [currentEvent])
   // sửa phần tử cuối cùng
   const updateLastItemArray = (array, newItem) => {
     array.pop()
@@ -233,14 +270,14 @@ function Main(props) {
     return array
   }
 
-  const betAdd = () => {
+  const betAdd = amount => {
     const lastData = data[data.length - 1]
     const marker = {
       time: lastData.time,
       position: 'aboveBar',
       color: '#d1d4dc',
       shape: 'arrowDown',
-      text: `@up ${lastData.close} | Time: ${currentExpireAt}`,
+      text: `@up ${Number(lastData.close)} | Time: ${currentExpireAt}`,
     }
 
     const optionPriceLine = {
@@ -255,6 +292,7 @@ function Main(props) {
     const newBetOrders = [
       ...betOrders,
       {
+        amount: amount,
         rangeTime: currentExpireAt,
         price: lastData.close,
         state: 'up',
@@ -266,14 +304,14 @@ function Main(props) {
     series.setMarkers(newBetOrders.map(item => item.marker))
   }
 
-  const betDown = () => {
+  const betDown = amount => {
     const lastData = data[data.length - 1]
     const marker = {
       time: lastData.time,
       position: 'belowBar',
       color: '#d1d4dc',
       shape: 'arrowUp',
-      text: `@down ${lastData.close} | Time: ${currentExpireAt}`,
+      text: `@down ${Number(lastData.close)} | Time: ${currentExpireAt}`,
     }
 
     const optionPriceLine = {
@@ -288,6 +326,7 @@ function Main(props) {
     const newBetOrders = [
       ...betOrders,
       {
+        amount: amount,
         rangeTime: currentExpireAt,
         price: lastData.close,
         state: 'down',
@@ -307,8 +346,11 @@ function Main(props) {
 
   return (
     <>
-      <Grid.Row>
-        <Grid.Column width={13}>
+      <Grid.Row style={{ display: props.role ? '' : 'none' }}>
+        <Grid.Column width={3}>
+          <Events emitEvent={event => setCurrentEvent(event)} />
+        </Grid.Column>
+        <Grid.Column width={10}>
           <div ref={ref} style={{ position: 'relative' }}></div>
         </Grid.Column>
         <Grid.Column width={3}>
@@ -319,12 +361,13 @@ function Main(props) {
               <Input
                 state="currentPrice"
                 type="number"
+                icon="dollar"
                 value={currentPrice}
                 onChange={(_, { value }) => setCurrentPrice(value)}
               />
             </Form.Field>
             <Form.Field>
-              <label>Expire At</label>
+              <label>Time</label>
               <Dropdown
                 selection
                 options={optionsExpireAt}
@@ -334,60 +377,57 @@ function Main(props) {
               />
             </Form.Field>
             <Form.Field style={{ textAlign: 'center' }}>
-              <span onClick={() => betAdd()}>
-                <TxButton
-                  accountPair={accountPair}
-                  attrsButton={{ fluid: true }}
-                  color="green"
-                  label="Call 95%"
-                  type="SIGNED-TX"
-                  setStatus={setStatus}
-                  attrs={{
-                    palletRpc: 'boTradingModule',
-                    callable: 'placeOrder',
-                    inputParams: [
-                      'BtcUsdt',
-                      'Call',
-                      currentPrice,
-                      getNextTime(currentExpireAt),
-                    ],
-                    paramFields: [
-                      PropTypes.string,
-                      PropTypes.string,
-                      PropTypes.number,
-                      PropTypes.number,
-                    ],
-                  }}
-                />
-              </span>
+              <TxButton
+                accountPair={accountPair}
+                attrsButton={{ fluid: true }}
+                color="green"
+                label="CALL"
+                type="SIGNED-TX"
+                setStatus={status => {
+                  if (status === 'InBlock') {
+                    betAdd(currentPrice)
+                  }
+
+                  setStatus(status)
+                }}
+                attrs={{
+                  palletRpc: 'boTradingModule',
+                  callable: 'placeOrder',
+                  inputParams: [
+                    'BtcUsdt',
+                    'Call',
+                    currentPrice + '000000000000',
+                    getNextTime(currentExpireAt + 18),
+                  ],
+                  paramFields: [true, true, true, true],
+                }}
+              />
             </Form.Field>
             <Form.Field style={{ textAlign: 'center' }}>
-              <span onClick={() => betDown()}>
-                <TxButton
-                  accountPair={accountPair}
-                  attrsButton={{ fluid: true }}
-                  color="red"
-                  label="Put 95%"
-                  type="SIGNED-TX"
-                  setStatus={setStatus}
-                  attrs={{
-                    palletRpc: 'boTradingModule',
-                    callable: 'placeOrder',
-                    inputParams: [
-                      'BtcUsdt',
-                      'Put',
-                      currentPrice,
-                      getNextTime(currentExpireAt),
-                    ],
-                    paramFields: [
-                      PropTypes.string,
-                      PropTypes.string,
-                      PropTypes.number,
-                      PropTypes.number,
-                    ],
-                  }}
-                />
-              </span>
+              <TxButton
+                accountPair={accountPair}
+                attrsButton={{ fluid: true }}
+                color="red"
+                label="PUT"
+                type="SIGNED-TX"
+                setStatus={status => {
+                  if (status === 'InBlock') {
+                    betDown(currentPrice)
+                  }
+                  setStatus(status)
+                }}
+                attrs={{
+                  palletRpc: 'boTradingModule',
+                  callable: 'placeOrder',
+                  inputParams: [
+                    'BtcUsdt',
+                    'Put',
+                    currentPrice + '000000000000',
+                    getNextTime(currentExpireAt + 18),
+                  ],
+                  paramFields: [true, true, true, true],
+                }}
+              />
             </Form.Field>
             <div style={{ overflowWrap: 'break-word' }}>{status}</div>
           </Form>
@@ -400,8 +440,37 @@ function Main(props) {
                 overflow: 'auto',
                 maxHeight: 240,
               }}
-              events={history}
-            />
+            >
+              {history.map((item, index) => {
+                const colorFeed = status => {
+                  switch (status) {
+                    case 'Win':
+                      return '#21BA45'
+                    case 'Lose':
+                      return '#DB2828'
+                    default:
+                      return ''
+                  }
+                }
+                const color = colorFeed(item.status)
+                return (
+                  <Feed.Event key={index}>
+                    <Feed.Content>
+                      <Feed.Summary>
+                        <span
+                          style={{
+                            color: color,
+                          }}
+                        >
+                          {item.summary}
+                        </span>
+                      </Feed.Summary>
+                      <Feed.Extra>{item.content}</Feed.Extra>
+                    </Feed.Content>
+                  </Feed.Event>
+                )
+              })}
+            </Feed>
           </Grid.Column>
         </Grid.Column>
       </Grid.Row>
